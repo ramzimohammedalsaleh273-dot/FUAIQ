@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from .engine import ImageProcessingError, enhance_image
 from .models import EnhanceOptions
