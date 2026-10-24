@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,34 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 void main() => runApp(const FuaiqApp());
+
+Uint8List _processImage(Map<String, Object> args) {
+  final sourceBytes = args['bytes'] as Uint8List;
+  final sharpen = args['sharpen'] as double;
+  final contrast = args['contrast'] as double;
+  final scale = args['scale'] as int;
+  final decoded = img.decodeImage(sourceBytes);
+  if (decoded == null) throw const FormatException('صيغة الصورة غير مدعومة أو الملف تالف.');
+  if (decoded.width * decoded.height > 40000000) {
+    throw const FormatException('الصورة كبيرة جدًا؛ الحد 40 مليون بكسل.');
+  }
+  var work = img.bakeOrientation(decoded);
+  work = img.adjustColor(work, contrast: contrast);
+  if (sharpen > 0) {
+    final amount = sharpen * 0.12;
+    work = img.convolution(work, filter: [
+      0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0
+    ]);
+  }
+  if (scale > 1) {
+    final width = work.width * scale, height = work.height * scale;
+    if (width * height > 40000000) {
+      throw const FormatException('الناتج يتجاوز حد 40 مليون بكسل. اختر تكبيرًا أقل.');
+    }
+    work = img.copyResize(work, width: width, height: height, interpolation: img.Interpolation.cubic);
+  }
+  return Uint8List.fromList(img.encodePng(work));
+}
 
 class FuaiqApp extends StatelessWidget {
   const FuaiqApp({super.key});
@@ -40,7 +69,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _chooseImage() async {
     try {
-      final file = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 100);
+      // Do not request recompression; retain the selected source bytes where the picker permits.
+      final file = await _picker.pickImage(source: ImageSource.gallery);
       if (file == null || !mounted) return;
       final bytes = await file.readAsBytes();
       setState(() { _originalBytes = bytes; _resultBytes = null; _savedPath = null; _error = null; });
@@ -53,27 +83,9 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_originalBytes == null || _busy) return;
     setState(() { _busy = true; _error = null; });
     try {
-      final decoded = img.decodeImage(_originalBytes!);
-      if (decoded == null) throw const FormatException('صيغة الصورة غير مدعومة أو الملف تالف.');
-      if (decoded.width * decoded.height > 40000000) {
-        throw const FormatException('الصورة كبيرة جدًا؛ الحد 40 مليون بكسل.');
-      }
-      var work = img.bakeOrientation(decoded);
-      work = img.adjustColor(work, contrast: _contrast);
-      if (_sharpen > 0) {
-        final amount = _sharpen * 0.12;
-        work = img.convolution(work, filter: [
-          0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0
-        ]);
-      }
-      if (_scale > 1) {
-        final width = work.width * _scale, height = work.height * _scale;
-        if (width * height > 40000000) {
-          throw const FormatException('الناتج يتجاوز حد 40 مليون بكسل. اختر تكبيرًا أقل.');
-        }
-        work = img.copyResize(work, width: width, height: height, interpolation: img.Interpolation.cubic);
-      }
-      final bytes = Uint8List.fromList(img.encodePng(work));
+      final bytes = await compute(_processImage, <String, Object>{
+        'bytes': _originalBytes!, 'sharpen': _sharpen, 'contrast': _contrast, 'scale': _scale,
+      });
       final dir = await getApplicationDocumentsDirectory();
       final out = File('${dir.path}/fuaiq_${DateTime.now().millisecondsSinceEpoch}.png');
       await out.writeAsBytes(bytes, flush: true);
@@ -119,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
         SegmentedButton<bool>(segments: const [
           ButtonSegment(value: false, label: Text('النتيجة')),
           ButtonSegment(value: true, label: Text('الأصل')),
-        ], selected: {_showOriginal}, onSelectionChanged: (v) => setState(() => _showOriginal = v.first)),
+        ], selected: {_showOriginal}, onSelectionChanged: _busy ? null : (v) => setState(() => _showOriginal = v.first)),
         const SizedBox(height: 10),
         ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.memory(
           (_showOriginal || _resultBytes == null) ? _originalBytes! : _resultBytes!,
