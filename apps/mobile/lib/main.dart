@@ -2,40 +2,12 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
+import 'package:fuaiq_mobile/image_processor.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 void main() => runApp(const FuaiqApp());
-
-Uint8List _processImage(Map<String, Object> args) {
-  final sourceBytes = args['bytes'] as Uint8List;
-  final sharpen = args['sharpen'] as double;
-  final contrast = args['contrast'] as double;
-  final scale = args['scale'] as int;
-  final decoded = img.decodeImage(sourceBytes);
-  if (decoded == null) throw const FormatException('صيغة الصورة غير مدعومة أو الملف تالف.');
-  if (decoded.width * decoded.height > 40000000) {
-    throw const FormatException('الصورة كبيرة جدًا؛ الحد 40 مليون بكسل.');
-  }
-  var work = img.bakeOrientation(decoded);
-  work = img.adjustColor(work, contrast: contrast);
-  if (sharpen > 0) {
-    final amount = sharpen * 0.12;
-    work = img.convolution(work, filter: [
-      0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0
-    ]);
-  }
-  if (scale > 1) {
-    final width = work.width * scale, height = work.height * scale;
-    if (width * height > 40000000) {
-      throw const FormatException('الناتج يتجاوز حد 40 مليون بكسل. اختر تكبيرًا أقل.');
-    }
-    work = img.copyResize(work, width: width, height: height, interpolation: img.Interpolation.cubic);
-  }
-  return Uint8List.fromList(img.encodePng(work));
-}
 
 class FuaiqApp extends StatelessWidget {
   const FuaiqApp({super.key});
@@ -83,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_originalBytes == null || _busy) return;
     setState(() { _busy = true; _error = null; });
     try {
-      final bytes = await compute(_processImage, <String, Object>{
+      final bytes = await compute(processImageBytes, <String, Object>{
         'bytes': _originalBytes!, 'sharpen': _sharpen, 'contrast': _contrast, 'scale': _scale,
       });
       final dir = await getApplicationDocumentsDirectory();
