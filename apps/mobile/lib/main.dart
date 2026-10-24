@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 void main() => runApp(const FuaiqApp());
 
@@ -33,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _busy = false;
   bool _showOriginal = false;
   double _sharpen = 0.35;
+  double _contrast = 1.03;
   int _scale = 2;
   String? _error;
 
@@ -57,9 +59,13 @@ class _HomeScreenState extends State<HomeScreen> {
         throw const FormatException('الصورة كبيرة جدًا؛ الحد 40 مليون بكسل.');
       }
       var work = img.bakeOrientation(decoded);
-      work = img.adjustColor(work, contrast: 1.03);
-      final amount = _sharpen * 0.12;
-      work = img.convolution(work, filter: [0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0]);
+      work = img.adjustColor(work, contrast: _contrast);
+      if (_sharpen > 0) {
+        final amount = _sharpen * 0.12;
+        work = img.convolution(work, filter: [
+          0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0
+        ]);
+      }
       if (_scale > 1) {
         final width = work.width * _scale, height = work.height * _scale;
         if (width * height > 40000000) {
@@ -77,6 +83,19 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _error = 'لم تنجح المعالجة: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _shareResult() async {
+    final path = _savedPath;
+    if (path == null || !File(path).existsSync()) {
+      setState(() => _error = 'لا توجد نتيجة محفوظة لمشاركتها.');
+      return;
+    }
+    try {
+      await Share.shareXFiles([XFile(path)], text: 'تم تحسين الصورة باستخدام فائق FUAIQ');
+    } catch (e) {
+      if (mounted) setState(() => _error = 'تعذرت مشاركة الصورة: $e');
     }
   }
 
@@ -106,21 +125,28 @@ class _HomeScreenState extends State<HomeScreen> {
           (_showOriginal || _resultBytes == null) ? _originalBytes! : _resultBytes!,
           fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Text('تعذر عرض الصورة'))),
         const SizedBox(height: 12),
-        Text('مقدار الشحذ: ${_sharpen.toStringAsFixed(2)}'),
+        Text('حدة التفاصيل: ${_sharpen.toStringAsFixed(2)}'),
         Slider(value: _sharpen, min: 0, max: 1, divisions: 20,
-          label: _sharpen.toStringAsFixed(2), onChanged: (v) => setState(() => _sharpen = v)),
+          label: _sharpen.toStringAsFixed(2), onChanged: _busy ? null : (v) => setState(() => _sharpen = v)),
+        Text('التباين: ${_contrast.toStringAsFixed(2)}'),
+        Slider(value: _contrast, min: 0.8, max: 1.3, divisions: 20,
+          label: _contrast.toStringAsFixed(2), onChanged: _busy ? null : (v) => setState(() => _contrast = v)),
         const Text('التكبير'),
         SegmentedButton<int>(segments: const [
           ButtonSegment(value: 1, label: Text('1×')),
           ButtonSegment(value: 2, label: Text('2×')),
           ButtonSegment(value: 4, label: Text('4×')),
-        ], selected: {_scale}, onSelectionChanged: (v) => setState(() => _scale = v.first)),
+        ], selected: {_scale}, onSelectionChanged: _busy ? null : (v) => setState(() => _scale = v.first)),
         const SizedBox(height: 12),
         FilledButton.icon(onPressed: _busy ? null : _enhance,
           icon: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_fix_high),
           label: Text(_busy ? 'جارٍ التحسين…' : 'حسّن الصورة واحفظ النتيجة')),
-        if (_savedPath != null) Padding(padding: const EdgeInsets.only(top: 8),
-          child: SelectableText('حُفظت النتيجة في:\n$_savedPath')),
+        if (_savedPath != null) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(onPressed: _busy ? null : _shareResult,
+            icon: const Icon(Icons.share), label: const Text('مشاركة النتيجة أو حفظها في تطبيق آخر')),
+          SelectableText('مسار الملف المحفوظ داخل التطبيق:\n$_savedPath'),
+        ],
       ],
       if (_error != null) Padding(padding: const EdgeInsets.only(top: 12),
         child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
