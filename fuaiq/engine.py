@@ -24,9 +24,11 @@ def _load_image(path: Path, max_pixels: int) -> Image.Image:
         raise ImageProcessingError(f"Unsupported image format: {path.suffix or '(no extension)'}")
     try:
         with Image.open(path) as source:
+            # Check dimensions before decoding pixels to reduce memory-exhaustion risk.
+            width, height = source.size
+            if width * height > max_pixels:
+                raise ImageProcessingError(f"Input exceeds pixel limit ({width * height:,} > {max_pixels:,}).")
             source.load()
-            if source.width * source.height > max_pixels:
-                raise ImageProcessingError(f"Input exceeds pixel limit ({source.width * source.height:,} > {max_pixels:,}).")
             return ImageOps.exif_transpose(source).convert("RGB")
     except ImageProcessingError:
         raise
