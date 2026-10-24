@@ -53,15 +53,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final decoded = img.decodeImage(_originalBytes!);
       if (decoded == null) throw const FormatException('صيغة الصورة غير مدعومة أو الملف تالف.');
-      final pixels = decoded.width * decoded.height;
-      if (pixels > 40000000) throw const FormatException('الصورة كبيرة جدًا؛ الحد 40 مليون بكسل.');
+      if (decoded.width * decoded.height > 40000000) {
+        throw const FormatException('الصورة كبيرة جدًا؛ الحد 40 مليون بكسل.');
+      }
       var work = img.bakeOrientation(decoded);
-      // Conservative local baseline: mild contrast, sharpen and Lanczos resampling.
       work = img.adjustColor(work, contrast: 1.03);
-      work = img.convolution(work, filter: [0, -0.12, 0, -0.12, 1.48, -0.12, 0, -0.12, 0]);
+      final amount = _sharpen * 0.12;
+      work = img.convolution(work, filter: [0, -amount, 0, -amount, 1 + 4 * amount, -amount, 0, -amount, 0]);
       if (_scale > 1) {
         final width = work.width * _scale, height = work.height * _scale;
-        if (width * height > 40000000) throw const FormatException('الناتج يتجاوز حد 40 مليون بكسل. اختر تكبيرًا أقل.');
+        if (width * height > 40000000) {
+          throw const FormatException('الناتج يتجاوز حد 40 مليون بكسل. اختر تكبيرًا أقل.');
+        }
         work = img.copyResize(work, width: width, height: height, interpolation: img.Interpolation.cubic);
       }
       final bytes = Uint8List.fromList(img.encodePng(work));
@@ -69,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final out = File('${dir.path}/fuaiq_${DateTime.now().millisecondsSinceEpoch}.png');
       await out.writeAsBytes(bytes, flush: true);
       if (!mounted) return;
-      setState(() { _resultBytes = bytes; _savedPath = out.path; });
+      setState(() { _resultBytes = bytes; _savedPath = out.path; _showOriginal = false; });
     } catch (e) {
       if (mounted) setState(() => _error = 'لم تنجح المعالجة: $e');
     } finally {
